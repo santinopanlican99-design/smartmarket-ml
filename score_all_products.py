@@ -1,9 +1,9 @@
 """
 score_all_products.py — Smart Market Scorer
-Fetches products from live site, scores them, outputs SQL file.
+Fetches real products from live site, scores them, outputs SQL file.
 """
 
-import os, sys, json, pickle, warnings
+import os, sys, json, pickle, warnings, hashlib, urllib.request
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -15,7 +15,7 @@ STATS_PATH  = os.path.join(BASE_DIR, "model_stats.json")
 ENC_PATH    = os.path.join(BASE_DIR, "label_encoder_brand.pkl")
 SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
 SITE_URL    = os.environ.get("SITE_URL", "https://secondhandphones.infinityfreeapp.com")
-EXPORT_TOKEN= os.environ.get("EXPORT_TOKEN", "")
+DB_PASS     = os.environ.get("DB_PASS", "SoJ9uOrKQOv9")
 
 FEATURE_COLS = [
     "device_brand_encoded","ram","internal_memory","rear_camera_mp",
@@ -41,30 +41,27 @@ def load_model():
         with open(SCALER_PATH, "rb") as f:
             scaler = pickle.load(f)
     needs_scaling = stats.get("algorithms", {}).get(best_name, {}).get("scaled", False)
-    print(f"  Model : {best_name} (CV: {stats.get(\"best_accuracy\", \"?\"):.2f}%)")
+    accuracy = stats.get("best_accuracy", 0)
+    print("  Model : " + best_name + " (CV: " + str(round(accuracy, 2)) + "%)")
     return model, label_enc, scaler, needs_scaling
 
 def fetch_products():
-    import urllib.request
-    # Generate daily token matching PHP: md5(DB_PASS + today)
-    import hashlib
-    db_pass = os.environ.get("DB_PASS", "SoJ9uOrKQOv9")
-    today   = datetime.now().strftime("%Y-%m-%d")
-    token   = "sm_export_" + hashlib.md5((db_pass + today).encode()).hexdigest()
-    url     = f"{SITE_URL}/api/export_products.php?token={token}"
-    print(f"  Fetching: {url}")
+    today = datetime.now().strftime("%Y-%m-%d")
+    token = "sm_export_" + hashlib.md5((DB_PASS + today).encode()).hexdigest()
+    url   = SITE_URL + "/api/export_products.php?token=" + token
+    print("  Fetching: " + url)
     req  = urllib.request.urlopen(url, timeout=30)
     data = json.loads(req.read().decode())
     if "error" in data:
         raise Exception(data["error"])
-    print(f"  Got {data[\"total\"]} products")
+    print("  Got " + str(data["total"]) + " products")
     return data["products"]
 
 def build_features(product, label_enc, current_year):
     brand = str(product.get("device_brand") or "Unknown")
     try:
         brand_enc = int(label_enc.transform([brand])[0]) if brand in label_enc.classes_ else 0
-    except:
+    except Exception:
         brand_enc = 0
     release_year = float(product.get("release_year") or current_year)
     price = float(product.get("selling_price") or 0)
@@ -83,11 +80,14 @@ def build_features(product, label_enc, current_year):
 
 def predict_score(model, scaler, needs_scaling, features):
     df = pd.DataFrame([features])[FEATURE_COLS]
-    df_input = pd.DataFrame(scaler.transform(df), columns=FEATURE_COLS) if (needs_scaling and scaler) else df
+    if needs_scaling and scaler is not None:
+        df_input = pd.DataFrame(scaler.transform(df), columns=FEATURE_COLS)
+    else:
+        df_input = df
     if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(df_input)[0]
+        proba   = model.predict_proba(df_input)[0]
         weights = [0.2, 0.5, 0.8, 1.0]
-        score = sum(proba[i] * weights[i] for i in range(min(len(proba), 4)))
+        score   = sum(proba[i] * weights[i] for i in range(min(len(proba), 4)))
     else:
         pred  = int(model.predict(df_input)[0])
         score = [0.2, 0.5, 0.8, 1.0][min(pred, 3)]
@@ -97,15 +97,15 @@ def write_sql(updates):
     path = os.path.join(BASE_DIR, "scores_output.sql")
     with open(path, "w") as f:
         f.write("-- Smart Market ML Scores\n")
-        f.write(f"-- Generated: {datetime.now()}\n\n")
+        f.write("-- Generated: " + str(datetime.now()) + "\n\n")
         for score, pid in updates:
             if score is not None:
-                f.write(f"UPDATE products SET ml_score = {score} WHERE id = {pid};\n")
+                f.write("UPDATE products SET ml_score = " + str(score) + " WHERE id = " + str(pid) + ";\n")
     return path
 
 def main():
     print("\n" + "="*50)
-    print("  Smart Market — Product Scorer")
+    print("  Smart Market - Product Scorer")
     print("="*50)
 
     print("\n Loading model...")
@@ -115,40 +115,42 @@ def main():
     try:
         products = fetch_products()
     except Exception as e:
-        print(f"\n ERROR fetching products: {e}")
+        print("\n ERROR: " + str(e))
         sys.exit(1)
 
-    print(f"\n Scoring {len(products)} products...")
+    total = len(products)
+    print("\n Scoring " + str(total) + " products...")
     updates = []
-    year = datetime.now().year
-    errors = 0
+    errors  = 0
+    year    = datetime.now().year
+
     for i, p in enumerate(products, 1):
         try:
             feat  = build_features(p, label_enc, year)
             score = predict_score(model, scaler, needs_scaling, feat)
             updates.append((score, p["id"]))
-        except Exception as e:
+        except Exception:
             errors += 1
             updates.append((None, p["id"]))
-        bar = "█" * int(30*i/len(products)) + "░" * (30 - int(30*i/len(products)))
-        print(f"\r  [{bar}] {i}/{len(products)}", end="", flush=True)
-    print()
+        filled = int(30 * i / total)
+        bar    = "X" * filled + "." * (30 - filled)
+        print("\r  [" + bar + "] " + str(i) + "/" + str(total), end="", flush=True)
 
+    print()
     print("\n Writing SQL file...")
     path = write_sql(updates)
-    good = [s for s,_ in updates if s is not None]
+    good = [s for s, _ in updates if s is not None]
 
-    print(f"\n" + "="*50)
-    print(f"  Done! {len(good)}/{len(products)} products scored")
+    print("\n" + "="*50)
+    print("  Done! " + str(len(good)) + "/" + str(total) + " products scored")
     if good:
-        print(f"  Avg score : {round(sum(good)/len(good), 4)}")
-        print(f"  Highest   : {max(good)}")
-        print(f"  Lowest    : {min(good)}")
+        print("  Avg : " + str(round(sum(good)/len(good), 4)))
+        print("  Max : " + str(max(good)))
+        print("  Min : " + str(min(good)))
     if errors:
-        print(f"  Errors    : {errors}")
-    print(f"  SQL file  : {path}")
-    print("="*50)
-    print("\n Download scores_output.sql from Artifacts and import in phpMyAdmin!\n")
+        print("  Errors: " + str(errors))
+    print("  SQL : " + path)
+    print("="*50 + "\n")
 
 if __name__ == "__main__":
     main()
