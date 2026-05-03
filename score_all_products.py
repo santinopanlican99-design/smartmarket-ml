@@ -46,12 +46,14 @@ def load_model():
     return model, label_enc, scaler, needs_scaling
 
 def fetch_products():
-    today = datetime.now().strftime("%Y-%m-%d")
-    token = "sm_export_" + hashlib.md5((DB_PASS + today).encode()).hexdigest()
+    token = "smartmarket_export_2024"
     url   = SITE_URL + "/api/export_products.php?token=" + token
     print("  Fetching: " + url)
     req  = urllib.request.urlopen(url, timeout=30)
     data = json.loads(req.read().decode())
+    raw = req.read().decode()
+    print("  Response: " + raw[:200])
+    data = json.loads(raw)
     if "error" in data:
         raise Exception(data["error"])
     print("  Got " + str(data["total"]) + " products")
