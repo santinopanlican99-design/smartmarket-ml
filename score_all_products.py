@@ -29,15 +29,11 @@ import pickle
 import math
 import numpy as np
 import pandas as pd
-import mysql.connector
+# No DB connection needed - outputs SQL file instead
 from datetime import datetime
 
 # ── DB credentials (same as db_connect.php) ──────────────────────────
-DB_HOST = os.environ.get("DB_HOST", "sql301.infinityfree.com")
-DB_NAME = os.environ.get("DB_NAME", "if0_41369385_2ndhandphones")
-DB_USER = os.environ.get("DB_USER", "if0_41369385")
-DB_PASS = os.environ.get("DB_PASS", "SoJ9uOrKQOv9")
-DB_PORT = 3306
+# DB credentials not needed - outputs SQL file for phpMyAdmin import
 
 # ── Paths (relative to this script's location = ml/ folder) ──────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -98,43 +94,18 @@ def load_model():
 
 
 def connect_db():
-    """Connect to the remote InfinityFree MySQL database."""
-    print(f"  Host     : {DB_HOST}")
-    print(f"  Database : {DB_NAME}")
-    conn = mysql.connector.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        port=DB_PORT,
-        connection_timeout=15
-    )
-    print(f"  Status   : Connected ✅")
-    return conn
+    pass  # Not used - outputs SQL instead
 
 
-def fetch_products(conn):
-    """Fetch all products needed for scoring."""
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT
-            id,
-            device_brand,
-            ram,
-            internal_memory,
-            rear_camera_mp,
-            battery,
-            release_year,
-            battery_health,
-            condition_score,
-            selling_price,
-            ml_score
-        FROM products
-        ORDER BY id
-    """)
-    rows = cursor.fetchall()
-    cursor.close()
-    return rows
+def fetch_products(conn=None):
+    """Load products from the dataset CSV instead of DB."""
+    csv_path = os.path.join(BASE_DIR, "dataset", "phones_dataset.csv")
+    if not os.path.exists(csv_path):
+        # Try root level
+        csv_path = os.path.join(BASE_DIR, "phones_dataset.csv")
+    df = pd.read_csv(csv_path)
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    return df.to_dict(orient="records")
 
 
 def build_features(product, label_enc, current_year=None):
@@ -194,14 +165,16 @@ def predict_score(model, scaler, needs_scaling, features):
 
 
 def update_scores(conn, updates):
-    """Bulk update ml_score for all products."""
-    cursor = conn.cursor()
-    cursor.executemany(
-        "UPDATE products SET ml_score = %s WHERE id = %s",
-        updates
-    )
-    conn.commit()
-    cursor.close()
+    """Write SQL UPDATE statements to a file for phpMyAdmin import."""
+    sql_path = os.path.join(BASE_DIR, "scores_output.sql")
+    with open(sql_path, "w") as f:
+        f.write("-- Smart Market ML Scores\n")
+        f.write("-- Import this file in phpMyAdmin to update all product scores\n\n")
+        for score, pid in updates:
+            if score is not None:
+                f.write(f"UPDATE products SET ml_score = {score} WHERE id = {pid};\n")
+    print(f"\n  SQL file saved: {sql_path}")
+    print(f"  Total UPDATE statements: {len([s for s,_ in updates if s is not None])}")
 
 
 def main():
@@ -213,18 +186,10 @@ def main():
     print("\n📦 Loading ML model...")
     model, label_enc, scaler, needs_scaling, best_name = load_model()
 
-    # 2. Connect to DB
-    print("\n🔌 Connecting to database...")
-    try:
-        conn = connect_db()
-    except Exception as e:
-        print(f"\n❌ DB connection failed: {e}")
-        print("\nTip: Make sure you're connected to the internet.")
-        sys.exit(1)
-
-    # 3. Fetch products
-    print("\n📋 Fetching products...")
-    products = fetch_products(conn)
+    # 2. Load products from CSV
+    print("\n📋 Loading products from dataset...")
+    conn = None
+    products = fetch_products()
     total = len(products)
     already_scored = sum(1 for p in products if p.get("ml_score") is not None)
     print(f"  Total    : {total} products")
@@ -254,10 +219,9 @@ def main():
 
     print()  # newline after progress bar
 
-    # 5. Update DB
-    print(f"\n💾 Updating database...")
-    update_scores(conn, [(s, pid) for s, pid in updates if s is not None])
-    conn.close()
+    # 5. Write SQL file
+    print(f"\n💾 Writing SQL file...")
+    update_scores(conn, updates)
 
     successful = len([s for s, _ in updates if s is not None])
     scores = [s for s, _ in updates if s is not None]
@@ -271,7 +235,7 @@ def main():
     if errors:
         print(f"  ⚠️  Errors           : {errors} products skipped")
     print(f"{'=' * 55}")
-    print("\n🚀 All done! Refresh your Smart Market analytics page.\n")
+    print("\n🚀 Download scores_output.sql from the Actions artifacts and import in phpMyAdmin!\n")
 
 
 if __name__ == "__main__":
