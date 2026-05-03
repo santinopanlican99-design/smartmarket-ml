@@ -1,0 +1,30 @@
+name: Score All Products
+
+on:
+  workflow_dispatch:   # Manual trigger — click "Run workflow" in GitHub
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install mysql-connector-python pandas scikit-learn numpy
+
+      - name: Run scorer
+        env:
+          DB_HOST: sql301.infinityfree.com
+          DB_NAME: if0_41369385_2ndhandphones
+          DB_USER: if0_41369385
+          DB_PASS: ${{ secrets.DB_PASS }}
+        run: |
+          python score_all_products.py
