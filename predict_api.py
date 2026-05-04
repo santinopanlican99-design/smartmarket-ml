@@ -64,6 +64,9 @@ FEATURE_COLS = [
     "device_age",
 ]
 
+# Weight each quality class: Poor=0.2, Fair=0.5, Good=0.8, Excellent=1.0
+CLASS_WEIGHTS = [0.2, 0.5, 0.8, 1.0]
+
 class PredictHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -105,8 +108,21 @@ class PredictHandler(BaseHTTPRequestHandler):
                 df = pd.DataFrame(scaler.transform(df), columns=FEATURE_COLS)
 
             prediction = model.predict(df)
-            score = float(max(model.predict_proba(df)[0])) \
-                    if hasattr(model, "predict_proba") else 0.0
+
+            # FIX: weighted class probabilities instead of max(proba).
+            # OLD: score = max(proba) — returned the confidence value regardless
+            #      of which class was predicted. A "Poor" phone predicted with 80%
+            #      confidence got score=0.80, same as an "Excellent" phone. Wrong.
+            # NEW: multiply each class probability by its quality weight so the
+            #      score reflects actual phone quality, not just model confidence.
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(df)[0]
+                n     = min(len(proba), len(CLASS_WEIGHTS))
+                score = float(sum(proba[i] * CLASS_WEIGHTS[i] for i in range(n)))
+                score = round(min(max(score, 0.0), 1.0), 4)
+            else:
+                pred  = int(prediction[0])
+                score = CLASS_WEIGHTS[min(pred, 3)]
 
             result = {
                 "prediction": int(prediction[0]),
