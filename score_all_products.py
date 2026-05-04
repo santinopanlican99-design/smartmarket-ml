@@ -42,8 +42,13 @@ def load_model():
 def fetch_products():
     url = SITE_URL + "/api/export_products.php?token=smartmarket_export_2024"
     print("  Fetching: " + url)
-    req  = urllib.request.urlopen(url, timeout=30)
-    raw  = req.read().decode()
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    response = urllib.request.urlopen(req, timeout=30)
+    raw = response.read().decode()
     print("  Response preview: " + raw[:200])
     data = json.loads(raw)
     if "error" in data:
