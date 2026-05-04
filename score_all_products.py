@@ -154,9 +154,15 @@ def build_features(product, label_enc, current_year=None):
     # Prefer stored device_age_years, fall back to computed value
     device_age = float(product.get("device_age_years") or (current_year - release_year))
 
-    # Normalize selling price to 0-1 range (assume max ₱50,000)
-    price = float(product.get("selling_price") or 0)
-    norm_price = min(price / 50000.0, 1.0)
+    # condition_score: DB may store 0-10, model trained on 1-5
+    cond_raw = float(product.get("condition_score") or 0)
+    if cond_raw > 5:
+        cond_score = max(1.0, min(5.0, round(cond_raw / 2, 1)))
+    else:
+        cond_score = max(1.0, min(5.0, cond_raw if cond_raw > 0 else 3.0))
+
+    # normalized_used_price: model trained on RAW prices (e.g. 8500), NOT divided
+    raw_price = float(product.get("selling_price") or 0)
 
     return {
         "device_brand_encoded"  : brand_enc,
@@ -166,8 +172,8 @@ def build_features(product, label_enc, current_year=None):
         "battery"               : float(product.get("battery_mah") or 0),
         "release_year"          : release_year,
         "battery_health"        : float(product.get("battery_health") or 80),
-        "condition_score"       : float(product.get("condition_score") or 50),
-        "normalized_used_price" : norm_price,
+        "condition_score"       : cond_score,
+        "normalized_used_price" : raw_price,
         "device_age"            : device_age
     }
 
