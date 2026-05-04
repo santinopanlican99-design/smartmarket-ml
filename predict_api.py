@@ -7,10 +7,23 @@ the real Python model via HTTP instead of shell_exec.
 import json
 import pickle
 import os
+import subprocess
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import pandas as pd
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
+
+# ── Auto-retrain if dataset is available ────────────────────────
+dataset_path = os.path.join(base_dir, "phones_dataset.csv")
+train_script = os.path.join(base_dir, "train_model.py")
+if os.path.exists(dataset_path) and os.path.exists(train_script):
+    print("Dataset found — retraining models on startup...")
+    subprocess.run([sys.executable, train_script], check=False)
+    print("Retraining complete.")
+else:
+    print("No dataset found — using existing model files.")
+# ────────────────────────────────────────────────────────────────
 
 def load_artifacts():
     stats_path    = os.path.join(base_dir, "model_stats.json")
