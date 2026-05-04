@@ -1,9 +1,4 @@
-"""
-score_all_products.py — Smart Market Scorer
-Fetches real products from live site, scores them, outputs SQL file.
-"""
-
-import os, sys, json, pickle, warnings, hashlib, urllib.request
+import os, sys, json, pickle, warnings, urllib.request
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -15,7 +10,6 @@ STATS_PATH  = os.path.join(BASE_DIR, "model_stats.json")
 ENC_PATH    = os.path.join(BASE_DIR, "label_encoder_brand.pkl")
 SCALER_PATH = os.path.join(BASE_DIR, "scaler.pkl")
 SITE_URL    = os.environ.get("SITE_URL", "https://secondhandphones.infinityfreeapp.com")
-DB_PASS     = os.environ.get("DB_PASS", "SoJ9uOrKQOv9")
 
 FEATURE_COLS = [
     "device_brand_encoded","ram","internal_memory","rear_camera_mp",
@@ -46,13 +40,11 @@ def load_model():
     return model, label_enc, scaler, needs_scaling
 
 def fetch_products():
-    token = "smartmarket_export_2024"
-    url   = SITE_URL + "/api/export_products.php?token=" + token
+    url = SITE_URL + "/api/export_products.php?token=smartmarket_export_2024"
     print("  Fetching: " + url)
     req  = urllib.request.urlopen(url, timeout=30)
-    data = json.loads(req.read().decode())
-    raw = req.read().decode()
-    print("  Response: " + raw[:200])
+    raw  = req.read().decode()
+    print("  Response preview: " + raw[:200])
     data = json.loads(raw)
     if "error" in data:
         raise Exception(data["error"])
@@ -109,23 +101,19 @@ def main():
     print("\n" + "="*50)
     print("  Smart Market - Product Scorer")
     print("="*50)
-
     print("\n Loading model...")
     model, label_enc, scaler, needs_scaling = load_model()
-
-    print("\n Fetching products from site...")
+    print("\n Fetching products...")
     try:
         products = fetch_products()
     except Exception as e:
         print("\n ERROR: " + str(e))
         sys.exit(1)
-
     total = len(products)
     print("\n Scoring " + str(total) + " products...")
     updates = []
     errors  = 0
     year    = datetime.now().year
-
     for i, p in enumerate(products, 1):
         try:
             feat  = build_features(p, label_enc, year)
@@ -137,21 +125,16 @@ def main():
         filled = int(30 * i / total)
         bar    = "X" * filled + "." * (30 - filled)
         print("\r  [" + bar + "] " + str(i) + "/" + str(total), end="", flush=True)
-
     print()
-    print("\n Writing SQL file...")
+    print("\n Writing SQL...")
     path = write_sql(updates)
     good = [s for s, _ in updates if s is not None]
-
     print("\n" + "="*50)
-    print("  Done! " + str(len(good)) + "/" + str(total) + " products scored")
+    print("  Done! " + str(len(good)) + "/" + str(total) + " scored")
     if good:
-        print("  Avg : " + str(round(sum(good)/len(good), 4)))
-        print("  Max : " + str(max(good)))
-        print("  Min : " + str(min(good)))
-    if errors:
-        print("  Errors: " + str(errors))
-    print("  SQL : " + path)
+        print("  Avg: " + str(round(sum(good)/len(good), 4)))
+        print("  Max: " + str(max(good)))
+        print("  Min: " + str(min(good)))
     print("="*50 + "\n")
 
 if __name__ == "__main__":
