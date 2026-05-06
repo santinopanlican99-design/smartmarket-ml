@@ -8,7 +8,6 @@ base_dir = os.path.dirname(__file__)
 
 stats_path   = os.path.join(base_dir, "model_stats.json")
 encoder_path = os.path.join(base_dir, "label_encoder_brand.pkl")
-scaler_path  = os.path.join(base_dir, "scaler.pkl")
 
 FEATURE_COLS = [
     "device_brand_encoded",
@@ -23,8 +22,12 @@ FEATURE_COLS = [
     "device_age"
 ]
 
-# Weight each quality class: Poor=0.2, Fair=0.5, Good=0.8, Excellent=1.0
-CLASS_WEIGHTS = [0.2, 0.5, 0.8, 1.0]
+# Equal-width class weights (evenly spaced, no big jumps):
+#   Class 0 = Poor     (score < 40)   -> 0.25
+#   Class 1 = Fair     (40 - 60)      -> 0.50
+#   Class 2 = Good     (60 - 80)      -> 0.75
+#   Class 3 = Excellent(80+)          -> 1.00
+CLASS_WEIGHTS = [0.25, 0.50, 0.75, 1.00]
 
 try:
     if not os.path.exists(stats_path):
@@ -32,31 +35,17 @@ try:
     if not os.path.exists(encoder_path):
         raise FileNotFoundError(f"Label encoder not found: {encoder_path}")
 
-    with open(stats_path, "r", encoding="utf-8") as f:
-        stats = json.load(f)
-
-    best_model_name = stats.get("best_model", "Random Forest")
-    algorithm_files = stats.get("algorithm_files", {})
-    model_file      = algorithm_files.get(best_model_name, "model_rf.pkl")
-    model_path      = os.path.join(base_dir, model_file)
-
+    # Always use Decision Tree
+    model_path = os.path.join(base_dir, "model_dt.pkl")
     if not os.path.exists(model_path):
-        model_path = os.path.join(base_dir, "model_rf.pkl")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        raise FileNotFoundError(f"Decision Tree model not found: {model_path}")
 
     with open(model_path, "rb") as f:
         model = pickle.load(f)
     with open(encoder_path, "rb") as f:
         label_encoder = pickle.load(f)
 
-    # Load scaler (used by NB, LR, SVM, KNN, Ensemble)
-    scaler = None
-    if os.path.exists(scaler_path):
-        with open(scaler_path, "rb") as f:
-            scaler = pickle.load(f)
-    needs_scaling = stats.get("algorithms", {}).get(best_model_name, {}).get("scaled", False)
-
+    # Decision Tree does not need scaling
     if len(sys.argv) < 2:
         raise ValueError("No input file provided")
     input_file = sys.argv[1]
@@ -84,17 +73,9 @@ try:
 
     df = pd.DataFrame([row])[FEATURE_COLS]
 
-    # Apply scaler if this model needs it
-    if needs_scaling and scaler is not None:
-        df = pd.DataFrame(scaler.transform(df), columns=FEATURE_COLS)
-
     prediction = model.predict(df)
 
-    # FIX: use weighted class probabilities, not max(proba).
-    # OLD: score = max(proba[0])  → always returns the confidence level (e.g. 0.80),
-    #      ignoring WHICH class was predicted. A "Poor" phone with 80% confidence
-    #      got the same score as an "Excellent" phone with 80% confidence.
-    # NEW: weight each class by quality so score reflects actual phone quality.
+    # Weighted score using evenly spaced class weights
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(df)[0]
         n     = min(len(proba), len(CLASS_WEIGHTS))
@@ -107,7 +88,7 @@ try:
     result = {
         "prediction" : int(prediction[0]),
         "score"      : score,
-        "model_used" : best_model_name,
+        "model_used" : "Decision Tree",
     }
 
     print(json.dumps(result))
