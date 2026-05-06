@@ -1,6 +1,6 @@
 {
-  "best_model": "Naive Bayes",
-  "best_accuracy": 73.64,
+  "best_model": "Decision Tree",
+  "best_accuracy": 86.36,
   "dataset_size": 110,
   "feature_count": 10,
   "features": [
@@ -16,102 +16,42 @@
     "Device Age"
   ],
   "classes": [
-    "Poor (<65)",
-    "Fair (65-74)",
-    "Good (75-84)",
-    "Excellent (85+)"
+    "Poor (<40)",
+    "Fair (40-60)",
+    "Good (60-80)",
+    "Excellent (80+)"
   ],
+  "class_boundaries": {
+    "Poor": "score < 40",
+    "Fair": "40 <= score < 60",
+    "Good": "60 <= score < 80",
+    "Excellent": "score >= 80"
+  },
   "algorithms": {
-    "Random Forest": {
-      "test_accuracy": 72.73,
-      "cv_accuracy": 70.0,
-      "cv_std": 11.71,
-      "precision": 71.93,
-      "recall": 72.73,
-      "f1_score": 72.1,
-      "description": "Ensemble of decision trees using bagging. Reduces overfitting via averaging.",
-      "scaled": false
-    },
     "Decision Tree": {
       "test_accuracy": 77.27,
-      "cv_accuracy": 70.91,
-      "cv_std": 7.39,
-      "precision": 80.81,
+      "cv_accuracy": 86.36,
+      "cv_std": 7.61,
+      "precision": 76.84,
       "recall": 77.27,
-      "f1_score": 77.17,
-      "description": "Single tree that splits data using Gini impurity. Highly interpretable.",
+      "f1_score": 76.88,
+      "description": "Single tree (max_depth=5) using Gini impurity. Balanced between accuracy and probability calibration.",
       "scaled": false
-    },
-    "K-Nearest Neighbors": {
-      "test_accuracy": 63.64,
-      "cv_accuracy": 64.55,
-      "cv_std": 13.3,
-      "precision": 62.32,
-      "recall": 63.64,
-      "f1_score": 62.44,
-      "description": "Classifies based on the 5 most similar phones in the training set.",
-      "scaled": true
-    },
-    "Support Vector Machine": {
-      "test_accuracy": 68.18,
-      "cv_accuracy": 70.0,
-      "cv_std": 10.98,
-      "precision": 69.7,
-      "recall": 68.18,
-      "f1_score": 65.86,
-      "description": "Finds the optimal hyperplane that separates recommendation classes.",
-      "scaled": true
-    },
-    "Naive Bayes": {
-      "test_accuracy": 72.73,
-      "cv_accuracy": 73.64,
-      "cv_std": 7.82,
-      "precision": 73.33,
-      "recall": 72.73,
-      "f1_score": 71.06,
-      "description": "Probabilistic classifier using Bayes theorem with feature independence assumption.",
-      "scaled": true
-    },
-    "Logistic Regression": {
-      "test_accuracy": 72.73,
-      "cv_accuracy": 73.64,
-      "cv_std": 12.33,
-      "precision": 73.33,
-      "recall": 72.73,
-      "f1_score": 71.06,
-      "description": "Linear classifier that estimates class probabilities.",
-      "scaled": true
-    },
-    "Voting Ensemble": {
-      "test_accuracy": 72.73,
-      "cv_accuracy": 69.09,
-      "cv_std": 0,
-      "precision": 73.33,
-      "recall": 72.73,
-      "f1_score": 71.06,
-      "description": "Combines RF + SVM + Logistic Regression votes for final prediction.",
-      "scaled": true
     }
   },
   "feature_importance": {
-    "Brand": 0.0498,
-    "RAM": 0.1047,
-    "Storage": 0.1029,
-    "Camera (MP)": 0.0556,
-    "Battery (mAh)": 0.0635,
-    "Release Year": 0.0402,
-    "Battery Health": 0.167,
-    "Condition Score": 0.0459,
-    "Used Price": 0.3148,
-    "Device Age": 0.0555
+    "Brand": 0.0652,
+    "RAM": 0.0,
+    "Storage": 0.0418,
+    "Camera (MP)": 0.0,
+    "Battery (mAh)": 0.0,
+    "Release Year": 0.0,
+    "Battery Health": 0.2995,
+    "Condition Score": 0.0,
+    "Used Price": 0.5935,
+    "Device Age": 0.0
   },
   "algorithm_files": {
-    "Random Forest": "model_rf.pkl",
-    "Decision Tree": "model_dt.pkl",
-    "K-Nearest Neighbors": "model_knn.pkl",
-    "Support Vector Machine": "model_svm.pkl",
-    "Naive Bayes": "model_nb.pkl",
-    "Logistic Regression": "model_lr.pkl",
-    "Voting Ensemble": "model_ensemble.pkl"
+    "Decision Tree": "model_dt.pkl"
   }
 }
