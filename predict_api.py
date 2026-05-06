@@ -12,53 +12,25 @@ import pandas as pd
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-# ── Load pre-trained artifacts (do NOT retrain on startup) ──────────
-# Models are already saved as .pkl files in the repo.
-# Re-training on every cold start adds 2-5 minutes of delay,
-# causing ml_helper.php (60s timeout) to fall back to PHP scoring.
-# ────────────────────────────────────────────────────────────────────
-
+# ── Load pre-trained Decision Tree artifact ─────────────────────
 def load_artifacts():
-    stats_path   = os.path.join(base_dir, "model_stats.json")
     encoder_path = os.path.join(base_dir, "label_encoder_brand.pkl")
-    scaler_path  = os.path.join(base_dir, "scaler.pkl")
-
-    with open(stats_path, "r", encoding="utf-8") as f:
-        stats = json.load(f)
-
-    best_model_name = stats.get("best_model", "Random Forest")
-    algorithm_files = stats.get("algorithm_files", {})
-    scaled_flag     = stats.get("algorithms", {}).get(best_model_name, {}).get("scaled", False)
-
-    # If best model is Naive Bayes, prefer Random Forest instead.
-    # Naive Bayes outputs overconfident probabilities (often 0.0 or 1.0),
-    # which made all products score 1.0000.
-    if best_model_name == "Naive Bayes":
-        rf_path = os.path.join(base_dir, "model_rf.pkl")
-        if os.path.exists(rf_path):
-            print("Naive Bayes detected — switching to Random Forest for better probability calibration.")
-            best_model_name = "Random Forest"
-            scaled_flag     = False
-            model_path      = rf_path
-        else:
-            model_file = algorithm_files.get(best_model_name, "model_rf.pkl")
-            model_path = os.path.join(base_dir, model_file)
-    else:
-        model_file = algorithm_files.get(best_model_name, "model_rf.pkl")
-        model_path = os.path.join(base_dir, model_file)
+    model_path   = os.path.join(base_dir, "model_dt.pkl")
 
     if not os.path.exists(model_path):
-        model_path = os.path.join(base_dir, "model_rf.pkl")
+        raise FileNotFoundError(f"Decision Tree model not found: {model_path}")
+    if not os.path.exists(encoder_path):
+        raise FileNotFoundError(f"Label encoder not found: {encoder_path}")
 
     with open(model_path,   "rb") as f: model         = pickle.load(f)
     with open(encoder_path, "rb") as f: label_encoder = pickle.load(f)
-    with open(scaler_path,  "rb") as f: scaler        = pickle.load(f)
 
-    return model, label_encoder, scaler, best_model_name, scaled_flag
+    # Decision Tree does not require scaling
+    return model, label_encoder
 
 
-model, label_encoder, scaler, best_model_name, use_scaler = load_artifacts()
-print(f"Smart Market ML API ready — model: {best_model_name} (scaled={use_scaler})")
+model, label_encoder = load_artifacts()
+print("Smart Market ML API ready — model: Decision Tree (scaled=False)")
 
 FEATURE_COLS = [
     "device_brand_encoded",
@@ -73,12 +45,12 @@ FEATURE_COLS = [
     "device_age",
 ]
 
-# Quality weight per class:
-# Class 0 = Poor (<65)      → 0.2
-# Class 1 = Fair (65-74)    → 0.5
-# Class 2 = Good (75-84)    → 0.8
-# Class 3 = Excellent (85+) → 1.0
-CLASS_WEIGHTS = [0.2, 0.5, 0.8, 1.0]
+# Equal-width class weights (evenly spaced, no big jumps):
+#   Class 0 = Poor     (score < 40)   -> 0.25
+#   Class 1 = Fair     (40 - 60)      -> 0.50
+#   Class 2 = Good     (60 - 80)      -> 0.75
+#   Class 3 = Excellent(80+)          -> 1.00
+CLASS_WEIGHTS = [0.25, 0.50, 0.75, 1.00]
 
 
 class PredictHandler(BaseHTTPRequestHandler):
@@ -89,7 +61,7 @@ class PredictHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({
             "status": "ok",
-            "model":  best_model_name,
+            "model":  "Decision Tree",
         }).encode())
 
     def do_POST(self):
@@ -125,11 +97,10 @@ class PredictHandler(BaseHTTPRequestHandler):
 
             df = pd.DataFrame([row])[FEATURE_COLS]
 
-            if use_scaler:
-                df = pd.DataFrame(scaler.transform(df), columns=FEATURE_COLS)
-
+            # No scaling needed for Decision Tree
             prediction = model.predict(df)
 
+            # Weighted score using evenly spaced class weights
             if hasattr(model, "predict_proba"):
                 proba = model.predict_proba(df)[0]
                 n     = min(len(proba), len(CLASS_WEIGHTS))
@@ -142,7 +113,7 @@ class PredictHandler(BaseHTTPRequestHandler):
             result = {
                 "prediction": int(prediction[0]),
                 "score":      score,
-                "model_used": best_model_name,
+                "model_used": "Decision Tree",
             }
 
         except Exception as e:
